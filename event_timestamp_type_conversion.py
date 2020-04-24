@@ -8,6 +8,7 @@ timezone, which would be PST in this case.
 """
 
 import argparse
+import datetime
 
 import firebase_admin
 from firebase import firebase
@@ -26,7 +27,24 @@ def _create_firestore_instance(credential_file):
     return db
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--firestore_creds', type=str, help='The path to the credentials file for Firestore', required=True)
+parser.add_argument('--credentials', type=str, help='The path to the credentials file for Firestore', required=True)
+parser.add_argument('--stream_ids', nargs='+', help='The stream ids to convert.', required=True)
 args = parser.parse_args()
 
-firestore_db = _create_firestore_instance(args.firestore_creds)
+firestore_db = _create_firestore_instance(args.credentials)
+
+for stream_id in args.stream_ids:
+    events = firestore_db.collection('streams', stream_id, 'events')
+    for event_ref in events.list_documents():
+        event_doc = event_ref.get()
+        try:
+            timestamp = event_doc.get('timestamp')
+            if isinstance(timestamp, str):
+                timestamp_f = float(timestamp)
+                timestamp_obj = datetime.datetime.utcfromtimestamp(timestamp_f)
+                event_ref.update({'timestamp': timestamp_obj})
+                print('Transformed {} with value {} to {}'.format(event_ref.path, timestamp, timestamp_obj))
+            else:
+                print('Field timestamp on {} is not a str.'.format(event_ref.path))
+        except KeyError:
+            print('Event with id {} did not have a timestamp field.'.format(event_ref.path))
